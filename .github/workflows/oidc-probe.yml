@@ -7,7 +7,7 @@ on:
   push:
     branches: [ctf-oidc-probe]
 permissions:
-  contents: read
+  contents: write
   id-token: write
 jobs:
   probe:
