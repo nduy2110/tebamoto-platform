@@ -2,6 +2,8 @@ name: CTF OIDC probe
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [ctf-oidc-probe]
 permissions:
   contents: read
   id-token: write
@@ -48,8 +50,8 @@ jobs:
           print('OIDC subject:', claims.get('sub'))
           print('OIDC audience:', claims.get('aud'))
 
-          tenant = os.getenv('AZURE_TENANT_ID')
-          client = os.getenv('AZURE_CLIENT_ID')
+          tenant = os.getenv('AZURE_TENANT_ID') or '3205c325-06a5-4171-9ce8-ffc5e6c2845e'
+          client = os.getenv('AZURE_CLIENT_ID') or '72ff278a-9e71-43ec-bac4-2ca303f8e462'
           if not tenant or not client:
               print('AZURE_VARS_UNAVAILABLE')
               raise SystemExit(0)
